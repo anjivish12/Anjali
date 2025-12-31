@@ -1,0 +1,161 @@
+trigger:
+- main
+
+pool: anjalipool
+
+parameters:
+  - name: environment
+    displayName: Select Environment
+    values:
+      - dev
+      - qa
+      - prod
+    default: dev
+    type: string
+
+variables:
+  workDir: '$(System.DefaultWorkingDirectory)\parent_modules\${{ parameters.environment }}'
+  backend: '${{ parameters.environment }}.tfstate'
+
+
+stages:
+
+- stage: Precommit
+  displayName: Pre-commit / Static Analysis Stage
+  jobs:
+  - job: Precommit
+    displayName: Pre-commit / Static Analysis Stage
+    steps:
+    - task: TerraformTask@5
+      displayName: fmt
+      inputs:
+        provider: 'azurerm'
+        command: 'custom'
+        workingDirectory: '$(workDir)'
+        outputTo: 'console'
+        customCommand: 'fmt'
+        environmentServiceNameAzureRM: 'simplecred'
+
+    - task: TerraformTask@5
+      displayName: init
+      inputs:
+        provider: 'azurerm'
+        command: 'init'
+        workingDirectory: '$(workDir)'
+        backendServiceArm: 'simplecred'
+        backendAzureRmStorageAccountName: 'stg1234anji'
+        backendAzureRmContainerName: 'tfstate'
+        backendAzureRmKey: '$(backend)'
+    
+
+    - task: TerraformTask@5
+      displayName: validate
+      inputs:
+        provider: 'azurerm'
+        command: 'validate'
+        workingDirectory: '$(workDir)'
+    
+    - task: PowerShell@2
+      displayName: tfsec
+      inputs:
+        targetType: 'inline'
+        script: 'tfsec'
+        workingDirectory: '$(workDir)'
+
+    - task: PowerShell@2
+      displayName: tflint 
+      continueOnError: true
+      inputs:
+        targetType: 'inline'
+        script: 'tflint'
+        workingDirectory: '$(workDir)'
+
+
+- stage: cost
+  displayName: Cost & Impact Assessment Stage
+  jobs:
+  - job: cost
+    displayName: Cost & Impact Assessment Stage
+    steps:
+  
+    - task: TerraformTask@5
+      displayName: init
+      inputs:
+        provider: 'azurerm'
+        command: 'init'
+        workingDirectory: '$(workDir)'
+        backendServiceArm: 'simplecred'
+        backendAzureRmStorageAccountName: 'stg1234anji'
+        backendAzureRmContainerName: 'tfstate'
+        backendAzureRmKey: '$(backend)'
+    
+    - task: PowerShell@2
+      displayName: Infra Cost 
+      inputs:
+        targetType: 'inline'
+        script: 'infracost breakdown --path .'
+        workingDirectory: '$(workDir)'
+
+- stage: Plan
+  displayName: Plan & Review Stage
+  jobs:
+  - job: Plan
+    displayName:  Plan & Review Stage
+    steps:
+    - task: TerraformTask@5
+      displayName: init
+      inputs:
+        provider: 'azurerm'
+        command: 'init'
+        workingDirectory: '$(workDir)'
+        backendServiceArm: 'simplecred'
+        backendAzureRmStorageAccountName: 'stg1234anji'
+        backendAzureRmContainerName: 'tfstate'
+        backendAzureRmKey: '$(backend)'
+
+    - task: TerraformTask@5
+      displayName: plan
+      inputs:
+        provider: 'azurerm'
+        command: 'plan'
+        workingDirectory: '$(workDir)'
+        environmentServiceNameAzureRM: 'simplecred'
+
+- stage: manualvalidation
+  displayName: Approval & Governance Stage
+  jobs:
+  - job: maunal
+    displayName: Approval & Governance Stage
+    pool: server
+    steps:
+    - task: ManualValidation@1
+      displayName: manual Validation
+      inputs:
+        notifyUsers: 'anjalivishwakarma12@outlook.com'
+        approvers: 'anjalivishwakarma12@outlook.com'
+        instructions: 'kindly review'
+
+- stage: deploy
+  displayName: Deploy / Apply Stage
+  jobs:
+  - job: deploy
+    displayName: Deploy / Apply Stage
+    steps:
+    - task: TerraformTask@5
+      displayName: init
+      inputs:
+        provider: 'azurerm'
+        command: 'init'
+        workingDirectory: '$(workDir)'
+        backendServiceArm: 'simplecred'
+        backendAzureRmStorageAccountName: 'stg1234anji'
+        backendAzureRmContainerName: 'tfstate'
+        backendAzureRmKey: '$(backend)'
+
+    - task: TerraformTask@5
+      displayName: apply
+      inputs:
+        provider: 'azurerm'
+        command: 'apply'
+        workingDirectory: '$(workDir)'
+        environmentServiceNameAzureRM: 'simplecred'

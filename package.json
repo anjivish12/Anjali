@@ -1,0 +1,8 @@
+{
+  "dependencies": {
+    "gitleaks": "^1.0.0"
+  },
+  "devDependencies": {
+    "pre-commit": "^1.2.2"
+  }
+}
